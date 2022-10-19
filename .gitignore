@@ -1,0 +1,14 @@
+.vscode/
+Makefile
+CMakeFiles/
+elf2uf2/
+generated/
+pico-sdk/
+pioasm/
+cmake_install.cmake
+CMakeCache.txt
+CMakeDoxyfile.in
+CMakeDoxygenDefaults.cmake
+printflash.elf.map
+build/
+wecker.*
