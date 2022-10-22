@@ -7,6 +7,7 @@ include(pico_sdk_import.cmake)
 project(wecker C CXX ASM)
 set(CMAKE_C STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
+set(PICO_CXX_ENABLE_RTTI 1)
 
 pico_sdk_init()
 
@@ -26,4 +27,12 @@ target_include_directories(wecker PRIVATE ${CMAKE_CURRENT_LIST_DIR} )
 target_include_directories(wecker PRIVATE include)
 
 
-target_link_libraries(wecker pico_stdlib hardware_i2c hardware_pio hardware_rtc)
+target_link_libraries(wecker pico_stdlib
+                            hardware_i2c
+                            hardware_pio
+                            hardware_rtc
+                            hardware_dma
+                            hardware_timer
+                            hardware_clocks
+                            hardware_pwm
+                            hardware_adc)
