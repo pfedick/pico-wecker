@@ -8,6 +8,7 @@
 #include "hardware/i2c.h"
 #include "hardware/rtc.h"
 #include "hardware/adc.h"
+#include "hardware/timer.h"
 
 
 #include "PicoTM1637.h"
@@ -31,10 +32,43 @@
 
 void enter_reset()
 {
+    TM1637_display_word("boot", true);
     while (1) {
-        if (gpio_get(UP_PIN) == 0 || gpio_get(DOWN_PIN) == 0) break;
+        if (gpio_get(UP_PIN) != 0 || gpio_get(DOWN_PIN) != 0) break;
     }
+    TM1637_display_word("----", true);
+    sleep_ms(100);
     reset_usb_boot(0, 0);
+}
+
+void main_loop()
+{
+    TM1637_display_word("run ", true);
+    datetime_t t;
+    uint64_t last_second=time_us_64() / 1000000;
+    printf("start second: %d\n", (int)last_second);
+    int last_state=0;
+    while (1) {
+        time_t now=time_us_64() / 1000000;
+        if (now > last_second) {
+            printf("next second: %d\n", (int)now);
+            last_second=now;
+            last_state=!last_state;
+            if (rtc_get_datetime(&t)) {
+                printf("Time: %02d:%02d:%02d\n", t.hour, t.min, t.sec);
+                TM1637_display_both(t.hour, t.min, true);
+            } else {
+                TM1637_display_word("err1", true);
+            }
+            TM1637_set_colon(last_state);
+        }
+        if (gpio_get(UP_PIN) == 0 && gpio_get(DOWN_PIN) == 0) enter_reset();
+
+        sleep_ms(10);
+
+
+    }
+
 }
 
 int main() {
@@ -56,7 +90,7 @@ int main() {
     //malloc_stats();
     TM1637_init(CLOCK_PIN_CLOCK, CLOCK_PIN_DATA);
     TM1637_clear();
-    TM1637_set_brightness(7); // max value, default is 0
+    TM1637_set_brightness(0); // max value, default is 0
     TM1637_display_word("init", true);
 
     adc_init();
@@ -107,10 +141,15 @@ int main() {
             .sec   = 00
     };
     //ds3231.setTime(t);
-    //ds3231.getTime(t);
+    ds3231.getTime(t);
     rtc_set_datetime(&t);
 
+    main_loop();
+    return 0;
+}
 
+#ifdef OLDCODE
+    /*
 
     char cbuffer[20];
 
@@ -126,17 +165,18 @@ int main() {
         //TM1637_display_word(cbuffer, true);
         */
 
-        if (rtc_get_datetime(&t)) {
-            TM1637_display_both(t.hour, t.min, true);
-        }
+if (rtc_get_datetime(&t)) {
+    TM1637_display_both(t.hour, t.min, true);
+}
 
-        sleep_ms(1000);
-        state=!state;
-        //gpio_put(AUDIO_PIN, state);
-        gpio_put(LED_PIN, state);
-        gpio_put(RELAIS_PIN, state);
-        if (gpio_get(UP_PIN) != 0 && gpio_get(DOWN_PIN) != 0) enter_reset();
-        //gpio_put(BUZZER_PIN, state);
+sleep_ms(1000);
+state=!state;
+//gpio_put(AUDIO_PIN, state);
+//gpio_put(LED_PIN, state);
+//gpio_put(RELAIS_PIN, state);
+if (gpio_get(UP_PIN) == 0 && gpio_get(DOWN_PIN) == 0) enter_reset();
+//gpio_put(BUZZER_PIN, state);
     }
 
 }
+#endif
