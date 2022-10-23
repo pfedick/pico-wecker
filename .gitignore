@@ -11,4 +11,8 @@ CMakeDoxyfile.in
 CMakeDoxygenDefaults.cmake
 printflash.elf.map
 build/
-wecker.*
+wecker.bin
+wecker.dis
+wecker.elf*
+wecker.hex
+wecker.uf2

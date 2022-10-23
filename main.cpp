@@ -9,65 +9,231 @@
 #include "hardware/rtc.h"
 #include "hardware/adc.h"
 #include "hardware/timer.h"
+#include "hardware/watchdog.h"
 
 
 #include "PicoTM1637.h"
 #include "pico/util/datetime.h"
 
 #include "ds3231.h"
+#include "wecker.h"
 
+#define IDLE_TIMEOUT 20000
 
-#define CLOCK_PIN_CLOCK 5
-#define CLOCK_PIN_DATA 4
-#define RELAIS_PIN 18
-#define AUDIO_PIN 28
-#define ADC_VOLTAGE_PIN 29
-#define BUZZER_PIN 2
+static int display_hue=0;
 
-#define ALARM_OFF_PIN 10
-#define SET_PIN 11
-#define UP_PIN 12
-#define DOWN_PIN 13
+ButtonState::ButtonState(int s)
+    :state(s)
+{
 
+}
+
+bool ButtonState::reset() const
+{
+    if (state == (ButtonState::Settings | ButtonState::Up)) return true;
+    return false;
+}
+
+bool ButtonState::usbBoot() const
+{
+    if (state == (ButtonState::Settings | ButtonState::Down)) return true;
+    return false;
+}
+
+bool ButtonState::settings() const
+{
+    if (state == ButtonState::Settings) return true;
+    return false;
+}
+
+bool ButtonState::alarmOff() const
+{
+    if (state == ButtonState::AlarmOff) return true;
+    return false;
+}
+
+bool ButtonState::up() const
+{
+    if (state == ButtonState::Up) return true;
+    return false;
+}
+
+bool ButtonState::down() const
+{
+    if (state == ButtonState::Down) return true;
+    return false;
+}
+
+bool ButtonState::noButtonesPressed() const
+{
+    if (state == 0) return true;
+    return false;
+}
+
+ButtonState getButtonState()
+{
+    int state=0;
+    if (gpio_get(ALARM_OFF_PIN) == 0) state|=ButtonState::AlarmOff;
+    if (gpio_get(UP_PIN) == 0) state|=ButtonState::Up;
+    if (gpio_get(DOWN_PIN) == 0) state|=ButtonState::Down;
+    if (gpio_get(SET_PIN) == 0) state|=ButtonState::Settings;
+    return ButtonState(state);
+}
+
+void waitForButtonsReleased()
+{
+    while (1) {
+        ButtonState s=getButtonState();
+        if (s.noButtonesPressed()) return;
+        sleep_ms(10);
+    }
+}
 
 void enter_reset()
 {
     TM1637_display_word("boot", true);
-    while (1) {
-        if (gpio_get(UP_PIN) != 0 || gpio_get(DOWN_PIN) != 0) break;
-    }
+    waitForButtonsReleased();
     TM1637_display_word("----", true);
+    watchdog_enable(1, 1);
+    while (1);
+}
+
+void enter_usb_boot()
+{
+    TM1637_display_word("usb ", true);
+    waitForButtonsReleased();
+    TM1637_display_word("ProG", true);
     sleep_ms(100);
     reset_usb_boot(0, 0);
 }
 
+void set_display_hue()
+{
+    char buffer[5];
+    waitForButtonsReleased();
+    uint64_t idle_timeout=IDLE_TIMEOUT + (time_us_64() / 1000);
+    while (1) {
+        uint64_t now_ms=time_us_64() / 1000;
+        sprintf(buffer, "hUE%01d", display_hue);
+        TM1637_display_word(buffer, false);
+        ButtonState buttons=getButtonState();
+        if (buttons.settings()) break;
+        else if (buttons.up() && display_hue < 7) {
+            display_hue++;
+            TM1637_set_brightness(display_hue);
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        } else if (buttons.down() && display_hue > 0) {
+            display_hue--;
+            TM1637_set_brightness(display_hue);
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        }
+        if (now_ms > idle_timeout) break;
+        sleep_ms(10);
+    }
+    waitForButtonsReleased();
+}
+
+static const char* menue_array[] ={
+    "SEt ", // 0
+    "UHr ", // 1
+    "ALAr", // 2
+    "OnOF", // 3
+    "diSP", // 4
+    "-00-"
+};
+
+void settings_loop()
+{
+    TM1637_display_word("SEt ", true);
+    waitForButtonsReleased();
+    int current_option=0;
+    //int max=sizeof(menue_array) / sizeof(const char*);
+    int max=4;
+    uint64_t idle_timeout=IDLE_TIMEOUT + (time_us_64() / 1000);
+    while (1) {
+        TM1637_display_word(menue_array[current_option], true);
+        uint64_t now_ms=time_us_64() / 1000;
+        ButtonState buttons=getButtonState();
+        if (buttons.up() && current_option > 0) {
+            current_option--;
+            TM1637_display_word(menue_array[current_option], true);
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        } else if (buttons.down() && current_option < 4) {
+            current_option++;
+            TM1637_display_word(menue_array[current_option], true);
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        } else if (buttons.down()) {
+            current_option=0;
+            TM1637_display_word(menue_array[current_option], true);
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        } else if (buttons.up() && current_option == 0) {
+            current_option=max;
+            TM1637_display_word(menue_array[current_option], true);
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        } else if (buttons.settings()) {
+            if (current_option == 0) break;
+            if (current_option == 4) set_display_hue();
+            now_ms=time_us_64() / 1000;
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+
+        } else if (buttons.usbBoot()) enter_usb_boot();
+        else if (buttons.reset()) enter_reset();
+        else {
+            sleep_ms(10);
+        }
+        if (now_ms > idle_timeout) break;
+    }
+    TM1637_display_word("----", true);
+    waitForButtonsReleased();
+
+}
+
 void main_loop()
 {
-    TM1637_display_word("run ", true);
+    //TM1637_display_word("run ", true);
     datetime_t t;
     uint64_t last_second=time_us_64() / 1000000;
-    printf("start second: %d\n", (int)last_second);
+    printf("main_loop start second: %d\n", (int)last_second);
     int last_state=0;
+    uint64_t settings_delay=0;
     while (1) {
-        time_t now=time_us_64() / 1000000;
-        if (now > last_second) {
-            printf("next second: %d\n", (int)now);
-            last_second=now;
+        uint64_t now_ms=time_us_64() / 1000;
+        time_t now_seconds=now_ms / 1000;
+        if (now_seconds > last_second) {
+            //printf("next second: %d\n", (int)now_seconds);
+            last_second=now_seconds;
             last_state=!last_state;
             if (rtc_get_datetime(&t)) {
-                printf("Time: %02d:%02d:%02d\n", t.hour, t.min, t.sec);
+                //printf("Time: %02d:%02d:%02d\n", t.hour, t.min, t.sec);
                 TM1637_display_both(t.hour, t.min, true);
             } else {
-                TM1637_display_word("err1", true);
+                TM1637_display_word("Err1", true);
             }
             TM1637_set_colon(last_state);
         }
-        if (gpio_get(UP_PIN) == 0 && gpio_get(DOWN_PIN) == 0) enter_reset();
+        //printf("now_ms: %d, settings_delay=%d\n", (int)now_ms, (int)settings_delay);
+        ButtonState buttons=getButtonState();
+        if (buttons.usbBoot()) enter_usb_boot();
+        else if (buttons.reset()) enter_reset();
+        else if (buttons.settings()) {
+            if (settings_delay == 0) settings_delay=now_ms + 1000;
+            else if (now_ms > settings_delay) {
+                settings_loop();
+                settings_delay=0;
+            }
+        } else {
+            settings_delay=0;
+        }
 
         sleep_ms(10);
-
-
     }
+    printf("main_loop ended\n");
 
 }
 
@@ -76,6 +242,7 @@ int main() {
     stdio_init_all();
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
+    gpio_put(LED_PIN, 1);
     gpio_init(RELAIS_PIN);
     gpio_set_dir(RELAIS_PIN, GPIO_OUT);
     gpio_put(RELAIS_PIN, 0);
@@ -90,8 +257,8 @@ int main() {
     //malloc_stats();
     TM1637_init(CLOCK_PIN_CLOCK, CLOCK_PIN_DATA);
     TM1637_clear();
-    TM1637_set_brightness(0); // max value, default is 0
-    TM1637_display_word("init", true);
+    TM1637_set_brightness(display_hue); // max value, default is 0
+    TM1637_display_word("InIt", true);
 
     adc_init();
     gpio_init(ADC_VOLTAGE_PIN);
@@ -143,7 +310,7 @@ int main() {
     //ds3231.setTime(t);
     ds3231.getTime(t);
     rtc_set_datetime(&t);
-
+    gpio_put(LED_PIN, 0);
     main_loop();
     return 0;
 }
@@ -176,7 +343,7 @@ state=!state;
 //gpio_put(RELAIS_PIN, state);
 if (gpio_get(UP_PIN) == 0 && gpio_get(DOWN_PIN) == 0) enter_reset();
 //gpio_put(BUZZER_PIN, state);
-    }
+}
 
 }
 #endif
