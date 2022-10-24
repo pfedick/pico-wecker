@@ -135,12 +135,45 @@ void set_display_hue()
     waitForButtonsReleased();
 }
 
+void test_loop()
+{
+    waitForButtonsReleased();
+    int state=0;
+    int hue=0;
+    uint64_t last_second=time_us_64() / 1000000;
+    while (1) {
+        uint64_t now_ms=time_us_64() / 1000;
+        time_t now_seconds=now_ms / 1000;
+        if (now_seconds > last_second) {
+            last_second=now_seconds;
+            state=!state;
+            hue++;
+            if (hue > 7) hue=0;
+            TM1637_set_brightness(hue);
+            gpio_put(RELAIS_PIN, state);
+            gpio_put(BUZZER_PIN, state);
+            if (state) TM1637_display_word("tESt", true);
+            else TM1637_display_word("----", true);
+        }
+        ButtonState buttons=getButtonState();
+        if (buttons.settings()) break;
+        sleep_ms(10);
+    }
+    TM1637_set_brightness(display_hue);
+    gpio_put(RELAIS_PIN, 0);
+    gpio_put(BUZZER_PIN, 0);
+
+    waitForButtonsReleased();
+}
+
+
 static const char* menue_array[] ={
     "SEt ", // 0
     "UHr ", // 1
     "ALAr", // 2
     "OnOF", // 3
     "diSP", // 4
+    "tESt", // 5
     "-00-"
 };
 
@@ -150,7 +183,7 @@ void settings_loop()
     waitForButtonsReleased();
     int current_option=0;
     //int max=sizeof(menue_array) / sizeof(const char*);
-    int max=4;
+    int max=5;
     uint64_t idle_timeout=IDLE_TIMEOUT + (time_us_64() / 1000);
     while (1) {
         TM1637_display_word(menue_array[current_option], true);
@@ -161,7 +194,7 @@ void settings_loop()
             TM1637_display_word(menue_array[current_option], true);
             sleep_ms(200);
             idle_timeout=now_ms + IDLE_TIMEOUT;
-        } else if (buttons.down() && current_option < 4) {
+        } else if (buttons.down() && current_option < max) {
             current_option++;
             TM1637_display_word(menue_array[current_option], true);
             sleep_ms(200);
@@ -179,6 +212,7 @@ void settings_loop()
         } else if (buttons.settings()) {
             if (current_option == 0) break;
             if (current_option == 4) set_display_hue();
+            if (current_option == 5) test_loop();
             now_ms=time_us_64() / 1000;
             idle_timeout=now_ms + IDLE_TIMEOUT;
 
