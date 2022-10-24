@@ -272,7 +272,6 @@ void main_loop()
 }
 
 int main() {
-    const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     stdio_init_all();
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
@@ -289,7 +288,7 @@ int main() {
     gpio_put(BUZZER_PIN, 0);
 
     //malloc_stats();
-    TM1637_init(CLOCK_PIN_CLOCK, CLOCK_PIN_DATA);
+    TM1637_init(DISPLAY_CLOCK_PIN, DISPLAY_DATA_PIN);
     TM1637_clear();
     TM1637_set_brightness(display_hue); // max value, default is 0
     TM1637_display_word("InIt", true);
@@ -326,7 +325,7 @@ int main() {
     sleep_ms(1000);
     printf("Start\n");
 
-    DS3231 ds3231(i2c1, 15, 14, 0x68);
+    DS3231 ds3231(i2c1, DS3231_CLOCK_PIN, DS3231_DATA_PIN, 0x68);
     //TM1637_display_word("time", true);
 
     char datetime_buf[256];
@@ -348,36 +347,3 @@ int main() {
     main_loop();
     return 0;
 }
-
-#ifdef OLDCODE
-    /*
-
-    char cbuffer[20];
-
-    int state=0;
-    while (1) {
-        ds3231.getTime(t);
-        printf("%02d:%02d:%02d\n", t.hour, t.min, t.sec);
-        /*
-        float voltage=(float)adc_read() * 3.0f * 3.3f / 65535.0f;
-        printf("voltage: %0.3f\n", voltage);
-        sprintf(cbuffer, "%04d", (int)(voltage * 1000));
-        printf(">>%s<<\n", cbuffer);
-        //TM1637_display_word(cbuffer, true);
-        */
-
-if (rtc_get_datetime(&t)) {
-    TM1637_display_both(t.hour, t.min, true);
-}
-
-sleep_ms(1000);
-state=!state;
-//gpio_put(AUDIO_PIN, state);
-//gpio_put(LED_PIN, state);
-//gpio_put(RELAIS_PIN, state);
-if (gpio_get(UP_PIN) == 0 && gpio_get(DOWN_PIN) == 0) enter_reset();
-//gpio_put(BUZZER_PIN, state);
-}
-
-}
-#endif
