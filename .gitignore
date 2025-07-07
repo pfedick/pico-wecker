@@ -16,3 +16,9 @@ wecker.dis
 wecker.elf*
 wecker.hex
 wecker.uf2
+PicoTM1637.pio.h
+pico_flash_region.ld
+build.ninja
+bs2_default.elf.map
+.ninja_log
+.ninja_deps

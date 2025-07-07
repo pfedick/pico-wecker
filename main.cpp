@@ -20,7 +20,9 @@
 
 #define IDLE_TIMEOUT 20000
 
-static int display_hue=0;
+static int display_hue=5;
+
+static DS3231 ds3231;
 
 ButtonState::ButtonState(int s)
     :state(s)
@@ -135,6 +137,82 @@ void set_display_hue()
     waitForButtonsReleased();
 }
 
+void set_time()
+{
+    datetime_t t;
+    char buffer[6];
+    int state=0;
+    TM1637_display_word("UHr ", true);
+    waitForButtonsReleased();
+    uint64_t idle_timeout=IDLE_TIMEOUT + (time_us_64() / 1000);
+    if (!rtc_get_datetime(&t)) {
+        TM1637_display_word("Err1", true);
+        sleep_ms(1000);
+        return;
+    }
+
+                //printf("Time: %02d:%02d:%02d\n", t.hour, t.min, t.sec);
+    
+    sleep_ms(1000);            
+
+    while (1) {
+        uint64_t now_ms=time_us_64() / 1000;
+        ButtonState buttons=getButtonState();
+        int v=0;
+        if (state==0) {
+            sprintf(buffer, "H :%02d", t.hour);
+        } else if (state==1) {
+            sprintf(buffer, "M :%02d", t.min);
+        } else if (state==2) {
+            sprintf(buffer, "S :%02d", t.sec);
+        }
+        TM1637_display_word(buffer, true);
+        if (buttons.settings()) {
+            state++;
+            if (state>2) state=0;
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        }
+        if (buttons.alarmOff()) {
+            ds3231.setTime(t);
+            rtc_set_datetime(&t);
+            break;
+        }
+        else if (buttons.up()) {
+            if (state==0) {
+                t.hour++;
+                if (t.hour>23) t.hour=0;
+            } else if (state==1) {
+                t.min++;
+                if (t.min>59) t.min=0;
+            } else if (state==2) {
+                t.sec++;
+                if (t.sec>59) t.sec=0;
+            }
+
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        } else if (buttons.down()) {
+            if (state==0) {
+                t.hour--;
+                if (t.hour<0 || t.hour>23) t.hour=23;
+            } else if (state==1) {
+                t.min--;
+                if (t.min<0 || t.min>59) t.min=59;
+            } else if (state==2) {
+                t.sec--;
+                if (t.sec<0 || t.sec>59) t.sec=59;
+            }
+            sleep_ms(200);
+            idle_timeout=now_ms + IDLE_TIMEOUT;
+        }
+        if (now_ms > idle_timeout) break;
+        sleep_ms(10);
+    }
+    waitForButtonsReleased();
+}
+
+
 void test_loop()
 {
     waitForButtonsReleased();
@@ -211,12 +289,14 @@ void settings_loop()
             idle_timeout=now_ms + IDLE_TIMEOUT;
         } else if (buttons.settings()) {
             if (current_option == 0) break;
+            if (current_option == 1) set_time();
             if (current_option == 4) set_display_hue();
             if (current_option == 5) test_loop();
             now_ms=time_us_64() / 1000;
             idle_timeout=now_ms + IDLE_TIMEOUT;
 
         } else if (buttons.usbBoot()) enter_usb_boot();
+        else if (buttons.alarmOff()) break;
         else if (buttons.reset()) enter_reset();
         else {
             sleep_ms(10);
@@ -325,7 +405,7 @@ int main() {
     sleep_ms(1000);
     printf("Start\n");
 
-    DS3231 ds3231(i2c1, DS3231_CLOCK_PIN, DS3231_DATA_PIN, 0x68);
+    ds3231.init(i2c1, DS3231_CLOCK_PIN, DS3231_DATA_PIN, 0x68);
     //TM1637_display_word("time", true);
 
     char datetime_buf[256];
